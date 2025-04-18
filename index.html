@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>ENA Grid Tactics - AI Enabled</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron&display=swap" rel="stylesheet">
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    html, body {
+      width:100%; height:100%;
+      font-family:'Orbitron',sans-serif;
+      background:url('imagens/background.jpg') no-repeat center center fixed;
+      background-size:cover; color:white; overflow-x:hidden;
+    }
+    /* SIDEBAR */
+    #sidebar {
+      position:fixed; top:0; left:0;
+      width:260px; height:100vh;
+      background:rgba(0,0,0,0.85); border-right:2px solid #00ffe0;
+      padding:20px; transform:translateX(-260px);
+      transition:transform .3s; z-index:200; overflow-y:auto;
+    }
+    #sidebar.open { transform:translateX(0); }
+    #toggle-sidebar-btn {
+      position:fixed; top:10px; left:10px;
+      padding:.5rem 1rem; background:#00ffe0; color:black;
+      border:none; border-radius:5px; cursor:pointer;
+      box-shadow:0 0 8px rgba(0,255,238,0.8); z-index:201;
+    }
+    /* MAIN */
+    #main-container { padding-top:60px; text-align:center; }
+    h1 {
+      color:#00ffe0; font-size:2em;
+      text-shadow:0 0 10px #00ffe0; margin-bottom:10px;
+    }
+    #turn-indicator {
+      font-size:1.3rem; color:#00ffe0;
+      text-shadow:0 0 5px #00ffe0; margin-bottom:1rem;
+    }
+    /* BOARD */
+    #game-board {
+      display:grid; grid-template:repeat(10,1fr)/repeat(10,1fr);
+      width:90vmin; height:90vmin; max-width:90vw; max-height:90vw;
+      background:rgba(0,0,0,0.5); border:2px solid #00ffe0; border-radius:10px;
+      box-shadow:0 0 20px 8px rgba(0,255,238,0.7);
+      margin:20px auto; position:relative;
+    }
+    .cell {
+      border:1px solid rgba(200,200,200,0.1);
+      display:flex; align-items:center; justify-content:center;
+      position:relative; cursor:pointer; overflow:hidden;
+    }
+    .teleporter { background:rgba(255,255,0,0.2); }
+    .teleporter::after {
+      content:'TP'; position:absolute; bottom:2px; right:2px;
+      color:#ff0; font-weight:bold; font-size:.8em; text-shadow:0 0 3px #ff0;
+    }
+    .teleporter-dest { background:rgba(255,255,0,0.1); }
+    .teleporter-dest::after {
+      content:'OUT'; position:absolute; bottom:2px; right:2px;
+      color:#ff0; font-weight:bold; font-size:.7em; text-shadow:0 0 3px #ff0;
+    }
+    .move-highlight { background:rgba(0,255,0,0.3)!important; }
+    .attack-highlight { background:rgba(255,0,0,0.3)!important; }
+    .ai-highlight { box-shadow:0 0 10px 3px yellow!important; }
+    /* UNITS */
+    .unit {
+      width:80%; height:80%; border-radius:50%;
+      display:flex; flex-direction:column; align-items:center; justify-content:center;
+      font-size:1.1em; font-weight:bold; color:black; box-sizing:border-box;
+    }
+    .player { background:#00ffee; box-shadow:0 0 5px #00ffee; }
+    .ai     { background:#ff4444; box-shadow:0 0 5px #ff4444; }
+    .hp-bar { width:85%; height:6px; background:rgba(255,255,255,0.2); border:1px solid white; margin-top:5px; }
+    .hp-bar-fill { background:lime; height:100%; }
+    /* AI TOAST */
+    #ai-toast {
+      position:absolute; top:30%; left:50%; transform:translateX(-50%);
+      padding:.5rem 1rem; background:rgba(0,0,0,0.8); color:yellow;
+      font-family:'Orbitron',sans-serif; font-size:1.2em; border-radius:5px;
+      display:none; z-index:300; text-shadow:0 0 5px black;
+    }
+    @media(max-width:600px){
+      #game-board { width:90vw; height:90vw; }
+      .unit { font-size:.9em; }
+    }
+  </style>
+</head>
+<body>
+  <button id="toggle-sidebar-btn">Rules &amp; Legend</button>
+  <div id="sidebar">
+    <h2>Game Rules</h2>
+    <ul>
+      <li><strong>Turn order:</strong> Player → move/attack → Towers auto‑attack → AI</li>
+      <li><strong>Teleport:</strong> step on (4,4) → jump to (5,5).</li>
+      <li><strong>Win:</strong> destroy enemy Base or eliminate all units.</li>
+    </ul>
+    <hr>
+    <h2>Unit Legend</h2>
+    <ul>
+      <li>Ba – Base: HP 10; no move/attack.</li>
+      <li>Tw – Tower: HP 4; range 1; auto‑attacks.</li>
+      <li>Un – Infantry: HP 3; move 1; melee 1.</li>
+      <li>Sn – Sniper: HP 2; move 1; range 3.</li>
+      <li>Tk – Tank: HP 5; move 1; range 2.</li>
+      <li>Me – Medic: HP 2; move 1; heal +1 HP.</li>
+      <li>Eg – Engineer: HP 2; move 1; repair +2 HP.</li>
+      <li>Ar – Artillery: HP 3; move 1; range 2–4.</li>
+      <li>Bo – Bomber: HP 3; move 1; splash melee.</li>
+      <li>Co – Commander: HP 4; move 1; buff adj +1 dmg.</li>
+      <li>Sh – Shieldbearer: HP 3; move 1; shields first hit.</li>
+      <li>Ph – Phantom: HP 2; unlimited ortho; melee 1.</li>
+      <li>Dr – Drone: HP 2; move 2; range 1–2.</li>
+    </ul>
+  </div>
+
+  <div id="main-container">
+    <h1>ENA Grid Tactics - Turn System</h1>
+    <div id="turn-indicator">
+      Current Turn: <span id="turn-text">player</span>
+    </div>
+    <div id="game-board"></div>
+    <div id="ai-toast"></div>
+  </div>
+
+  <script>
+    // Globals & Helpers
+    const gridSize = 10,
+          teleIn   = {x:1,y:4},
+          teleOut  = {x:8,y:4};
+    let currentTurn = 'player',
+        selectedUnit = null;
+    const cells = [], units = [];
+
+    function twoLetterLabel(type){
+      const map = {
+        Base:'Ba',Tower:'Tw',Unit:'Un',Sniper:'Sn',Tank:'Tk',
+        Medic:'Me',Engineer:'Eg',Artillery:'Ar',Bomber:'Bo',
+        Commander:'Co',Shieldbearer:'Sh',Phantom:'Ph',Drone:'Dr'
+      };
+      return map[type] || type.slice(0,2);
+    }
+    function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+    function shuffle(arr){ arr.sort(()=>Math.random()-0.5); }
+
+    // Unit Blueprints
+    const playerUnits = [
+      {type:'Base',hp:10,maxHp:10,team:'player'},
+      {type:'Tower',hp:4,maxHp:4,range:1,team:'player'},
+      {type:'Tower',hp:4,maxHp:4,range:1,team:'player'},
+      {type:'Commander',hp:4,maxHp:4,team:'player'},
+      {type:'Shieldbearer',hp:3,maxHp:3,shieldActive:true,team:'player'},
+      {type:'Tank',hp:5,maxHp:5,team:'player'},
+      {type:'Tank',hp:5,maxHp:5,team:'player'},
+      {type:'Sniper',hp:2,maxHp:2,team:'player'},
+      {type:'Sniper',hp:2,maxHp:2,team:'player'},
+      {type:'Medic',hp:2,maxHp:2,team:'player'},
+      {type:'Engineer',hp:2,maxHp:2,team:'player'},
+      {type:'Artillery',hp:3,maxHp:3,team:'player'},
+      {type:'Bomber',hp:3,maxHp:3,team:'player'},
+      {type:'Unit',hp:3,maxHp:3,team:'player'},
+      {type:'Unit',hp:3,maxHp:3,team:'player'},
+      {type:'Unit',hp:3,maxHp:3,team:'player'},
+      {type:'Unit',hp:3,maxHp:3,team:'player'},
+      {type:'Phantom',hp:2,maxHp:2,team:'player'},
+      {type:'Drone',hp:2,maxHp:2,team:'player'},
+      {type:'Drone',hp:2,maxHp:2,team:'player'},
+    ];
+    const aiUnits = [
+      {type:'Base',hp:10,maxHp:10,team:'ai'},
+      {type:'Tower',hp:4,maxHp:4,range:1,team:'ai'},
+      {type:'Tower',hp:4,maxHp:4,range:1,team:'ai'},
+      {type:'Commander',hp:4,maxHp:4,team:'ai'},
+      {type:'Shieldbearer',hp:3,maxHp:3,shieldActive:true,team:'ai'},
+      {type:'Tank',hp:5,maxHp:5,team:'ai'},
+      {type:'Tank',hp:5,maxHp:5,team:'ai'},
+      {type:'Sniper',hp:2,maxHp:2,team:'ai'},
+      {type:'Sniper',hp:2,maxHp:2,team:'ai'},
+      {type:'Medic',hp:2,maxHp:2,team:'ai'},
+      {type:'Engineer',hp:2,maxHp:2,team:'ai'},
+      {type:'Artillery',hp:3,maxHp:3,team:'ai'},
+      {type:'Bomber',hp:3,maxHp:3,team:'ai'},
+      {type:'Unit',hp:3,maxHp:3,team:'ai'},
+      {type:'Unit',hp:3,maxHp:3,team:'ai'},
+      {type:'Unit',hp:3,maxHp:3,team:'ai'},
+      {type:'Unit',hp:3,maxHp:3,team:'ai'},
+      {type:'Phantom',hp:2,maxHp:2,team:'ai'},
+      {type:'Drone',hp:2,maxHp:2,team:'ai'},
+      {type:'Drone',hp:2,maxHp:2,team:'ai'},
+    ];
+
+    // Fixed base positions
+    const FIXED_BASE = { player:{x:4,y:9}, ai:{x:4,y:0} };
+
+    // Place 5 guards around each Base, then randomize the rest, ensuring no overlap
+    function placeUnits(){
+      const used = new Set();
+      ['player','ai'].forEach(team=>{
+        const list = team==='player'?playerUnits:aiUnits;
+        // 1) Base
+        const base = list[0];
+        base.x = FIXED_BASE[team].x;
+        base.y = FIXED_BASE[team].y;
+        used.add(`${base.x},${base.y}`);
+        // 2) Five adjacent guards
+        const offsets = [
+          {dx:0,dy:-1},{dx:-1,dy:0},{dx:1,dy:0},
+          {dx:0,dy:1},{dx:-1,dy:-1},{dx:1,dy:-1},
+          {dx:-1,dy:1},{dx:1,dy:1}
+        ];
+        const rest = list.slice(1);
+        let placed = 0;
+        for(const off of offsets){
+          if(placed>=5||rest.length===0) break;
+          const nx = base.x + off.dx, ny = base.y + off.dy;
+          const key = `${nx},${ny}`;
+          if(nx>=0&&nx<gridSize&&ny>=0&&ny<gridSize&&!used.has(key)){
+            const u = rest.shift();
+            u.x = nx; u.y = ny;
+            used.add(key);
+            placed++;
+          }
+        }
+        // 3) Randomize the remaining
+        const pool = [];
+        for(let x=0;x<gridSize;x++){
+          for(let y=0;y<gridSize;y++){
+            const key = `${x},${y}`;
+            if(!used.has(key)) pool.push({x,y});
+          }
+        }
+        shuffle(pool);
+        rest.forEach((u,i)=>{
+          u.x = pool[i].x;
+          u.y = pool[i].y;
+          used.add(`${u.x},${u.y}`);
+        });
+      });
+      // 4) AI Buff
+      for(const u of aiUnits){
+        if(u.type==='Unit'){ u.type='Sniper'; u.hp=u.maxHp=2; break; }
+      }
+      aiUnits.forEach(u=>{
+        if(u.team==='ai'&&(u.type==='Sniper'||u.type==='Drone')){
+          u.hp++; u.maxHp++;
+        }
+      });
+      units.push(...playerUnits, ...aiUnits);
+    }
+
+    // Grid creation
+    function createGrid(){
+      const board = document.getElementById('game-board');
+      for(let y=0;y<gridSize;y++){
+        for(let x=0;x<gridSize;x++){
+          const c = document.createElement('div');
+          c.className = 'cell';
+          c.dataset.x = x;
+          c.dataset.y = y;
+          if(x===teleIn.x&&y===teleIn.y) c.classList.add('teleporter');
+          if(x===teleOut.x&&y===teleOut.y) c.classList.add('teleporter-dest');
+          board.appendChild(c);
+          cells.push(c);
+          c.addEventListener('click', ()=> handleCellClick(x,y));
+        }
+      }
+    }
+
+    // Draw units without overlap
+    function drawUnits(){
+      cells.forEach(c=>c.innerHTML='');
+      units.forEach(u=>{
+        const {x,y} = u;
+        if(x<0||x>=gridSize||y<0||y>=gridSize) return;
+        const cell = document.querySelector(`.cell[data-x='${x}'][data-y='${y}']`);
+        const dv   = document.createElement('div');
+        dv.className = `unit ${u.team}`;
+        const lb = document.createElement('div');
+        lb.textContent = twoLetterLabel(u.type);
+        const hb = document.createElement('div'); hb.className='hp-bar';
+        const fl = document.createElement('div'); fl.className='hp-bar-fill';
+        fl.style.width = `${(u.hp/u.maxHp)*100}%`;
+        hb.appendChild(fl);
+        dv.appendChild(lb);
+        dv.appendChild(hb);
+        cell.appendChild(dv);
+      });
+    }
+
+    // Movement & combat (unchanged implementation)
+    function clearHighlights(){ cells.forEach(c=>c.classList.remove('move-highlight','attack-highlight')); }
+    function showHighlights(){
+      if(!selectedUnit) return; clearHighlights();
+      cells.forEach(c=>{
+        const x=+c.dataset.x, y=+c.dataset.y;
+        const dx=Math.abs(x-selectedUnit.x), dy=Math.abs(y-selectedUnit.y), dist=dx+dy;
+        const occ=units.find(u=>u.x===x&&u.y===y);
+        if(canMove(selectedUnit,occ,dx,dy)) c.classList.add('move-highlight');
+        else if(occ&&occ.team!==selectedUnit.team&&canAttack(selectedUnit,dx,dy,dist))
+          c.classList.add('attack-highlight');
+      });
+    }
+    function handleCellClick(x,y){
+      const occ = units.find(u=>u.x===x&&u.y===y);
+      if(selectedUnit&&selectedUnit.x===x&&selectedUnit.y===y){
+        selectedUnit = null;
+        clearHighlights();
+        return;
+      }
+      if(!selectedUnit){
+        if(occ && occ.team===currentTurn && !['Base','Tower'].includes(occ.type)){
+          selectedUnit = occ;
+          showHighlights();
+        }
+      } else {
+        const dx=Math.abs(x-selectedUnit.x), dy=Math.abs(y-selectedUnit.y), dist=dx+dy;
+        if(canMove(selectedUnit,occ,dx,dy)) moveUnit(selectedUnit,x,y);
+        else if(occ&&canAttack(selectedUnit,dx,dy,dist)) attackUnit(selectedUnit,occ);
+        else {
+          selectedUnit = null;
+          drawUnits();
+          clearHighlights();
+        }
+      }
+    }
+    function canMove(u,occ,dx,dy){
+      const dist=dx+dy, orth=(dx===0||dy===0);
+      if(u.type==='Phantom') return orth&&!occ;
+      if(u.type==='Drone')   return orth&&dist<=2&&!occ;
+      return orth&&dist===1&&!occ;
+    }
+    function moveUnit(u,x,y){
+      u.x=x; u.y=y;
+      if(x===teleIn.x&&y===teleIn.y){ u.x=teleOut.x; u.y=teleOut.y; }
+      selectedUnit=null; drawUnits(); autoTowerAttack(); drawUnits(); endTurn();
+    }
+    function canAttack(u,dx,dy,dist){
+      const orth=(dx===0||dy===0), r = 
+        u.type==='Tank'?2:
+        u.type==='Sniper'?3:
+        u.type==='Drone'?2:
+        1;
+      if(u.type==='Artillery') return orth&&dist>=2&&dist<=4;
+      return orth&&dist<=r;
+    }
+    function attackUnit(att,def){
+      doAttack(att,def);
+      selectedUnit=null; drawUnits(); autoTowerAttack(); drawUnits(); endTurn();
+    }
+    function doAttack(att,def){
+      let dmg=1;
+      if(units.some(u=>u.type==='Commander'&&u.team===att.team&&Math.abs(u.x-att.x)+Math.abs(u.y-att.y)===1))
+        dmg++;
+      if(att.type==='Medic'){
+        if(def.team===att.team&&def.hp<def.maxHp) def.hp=Math.min(def.maxHp,def.hp+1);
+        return;
+      }
+      if(att.type==='Engineer'){
+        if(def.team===att.team&&def.type==='Base'&&def.hp<def.maxHp) def.hp=Math.min(def.maxHp,def.hp+2);
+        return;
+      }
+      if(att.type==='Bomber'){
+        dealDamage(def,dmg);
+        [[def.x+1,def.y],[def.x-1,def.y],[def.x,def.y+1],[def.x,def.y-1]].forEach(([cx,cy])=>{
+          const s=units.find(z=>z.x===cx&&z.y===cy);
+          if(s&&s.team!==att.team) dealDamage(s,dmg);
+        });
+        return;
+      }
+      dealDamage(def,dmg);
+    }
+    function dealDamage(tgt,dmg){
+      if(tgt.type==='Shieldbearer'&&tgt.shieldActive){ tgt.shieldActive=false; return; }
+      tgt.hp-=dmg; if(tgt.hp<=0) removeUnit(tgt);
+    }
+    function removeUnit(u){
+      const idx=units.indexOf(u);
+      if(idx>-1) units.splice(idx,1);
+      if(u.type==='Base'){
+        alert((u.team==='player'?'AI':'You')+' wins!');
+        location.reload();
+      }
+    }
+    function autoTowerAttack(){
+      units.filter(u=>u.type==='Tower').forEach(tw=>{
+        const r = tw.range||1;
+        units.filter(e=>e.team!==tw.team&&e.type!=='Base').forEach(en=>{
+          const dx=Math.abs(en.x-tw.x), dy=Math.abs(en.y-tw.y), dist=dx+dy;
+          if((dx===0||dy===0)&&dist<=r){ en.hp--; if(en.hp<=0) removeUnit(en); }
+        });
+      });
+    }
+    async function showToast(msg,d=2000){
+      const toast = document.getElementById('ai-toast');
+      toast.textContent=msg; toast.style.display='block';
+      await sleep(d); toast.style.display='none';
+    }
+    async function flashCell(x,y,cls='ai-highlight',d=2000){
+      const c = document.querySelector(`.cell[data-x='${x}'][data-y='${y}']`);
+      if(!c)return; c.classList.add(cls); await sleep(d); c.classList.remove(cls);
+    }
+    function endTurn(){
+      currentTurn = currentTurn==='player'?'ai':'player';
+      document.getElementById('turn-text').textContent=currentTurn;
+      clearHighlights();
+      if(currentTurn==='ai') setTimeout(runAI,2000);
+    }
+    async function runAI(){
+      // Medic heal
+      for(const u of units.filter(u=>u.team==='ai'&&u.type==='Medic')){
+        for(const ally of units.filter(a=>a.team==='ai'&&a.hp<a.maxHp)){
+          const dx=Math.abs(ally.x-u.x),dy=Math.abs(ally.y-u.y);
+          if((dx===0||dy===0)&&dx+dy<=1){
+            await showToast(`AI heals ${twoLetterLabel(ally.type)} at (${ally.x},${ally.y})`);
+            await flashCell(u.x,u.y); await flashCell(ally.x,ally.y);
+            attackUnit(u,ally); return;
+          }
+        }
+      }
+      // Engineer repair
+      for(const u of units.filter(u=>u.team==='ai'&&u.type==='Engineer')){
+        const base=units.find(b=>b.team==='ai'&&b.type==='Base'&&b.hp<b.maxHp);
+        if(base){
+          const dx=Math.abs(base.x-u.x),dy=Math.abs(base.y-u.y);
+          if((dx===0||dy===0)&&dx+dy<=1){
+            await showToast(`AI repairs Base at (${base.x},${base.y})`);
+            await flashCell(u.x,u.y); await flashCell(base.x,base.y);
+            attackUnit(u,base); return;
+          }
+        }
+      }
+      // Attack
+      for(const u of units.filter(u=>u.team==='ai'&&![ 'Base','Tower' ].includes(u.type))){
+        for(const e of units.filter(e=>e.team==='player')){
+          const dx=Math.abs(e.x-u.x),dy=Math.abs(e.y-u.y),dist=dx+dy;
+          if(canAttack(u,dx,dy,dist)){
+            await showToast(`AI attacks ${twoLetterLabel(e.type)} at (${e.x},${e.y})`);
+            await flashCell(u.x,u.y); await flashCell(e.x,e.y);
+            attackUnit(u,e); return;
+          }
+        }
+      }
+      // Move
+      let best=null, bestD=Infinity;
+      for(const u of units.filter(u=>u.team==='ai'&&![ 'Base','Tower' ].includes(u.type))){
+        const moves=cells.filter(c=>{
+          const x=+c.dataset.x,y=+c.dataset.y;
+          return canMove(u,units.find(z=>z.x===x&&z.y===y),Math.abs(x-u.x),Math.abs(y-u.y));
+        });
+        for(const c of moves){
+          const x=+c.dataset.x, y=+c.dataset.y;
+          const d=Math.min(...units.filter(e=>e.team==='player')
+            .map(e=>Math.abs(e.x-x)+Math.abs(e.y-y)));
+          if(d<bestD){ bestD=d; best={u,x,y}; }
+        }
+      }
+      if(best){
+        await showToast(`AI moves ${twoLetterLabel(best.u.type)} from (${best.u.x},${best.u.y}) to (${best.x},${best.y})`);
+        await flashCell(best.u.x,best.u.y); await flashCell(best.x,best.y);
+        moveUnit(best.u,best.x,best.y); return;
+      }
+      endTurn();
+    }
+
+    // Initialization
+    document.addEventListener('DOMContentLoaded', ()=>{
+      // Sidebar toggle
+      document.getElementById('toggle-sidebar-btn').addEventListener('click', ()=>{
+        const sb = document.getElementById('sidebar'), btn = document.getElementById('toggle-sidebar-btn');
+        sb.classList.toggle('open');
+        btn.textContent = sb.classList.contains('open') ? 'Close Rules & Legend' : 'Rules & Legend';
+      });
+      placeUnits();
+      createGrid();
+      drawUnits();
+    });
+  </script>
+</body>
+</html>

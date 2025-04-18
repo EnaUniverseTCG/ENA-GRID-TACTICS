@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ENA Grid Tactics</title>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron&display=swap" rel="stylesheet">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow-x: hidden;
+      font-family: 'Orbitron', sans-serif;
+      background: url('imagens/background.jpg') no-repeat center center fixed;
+      background-size: cover;
+      color: white;
+    }
+
+    #sidebar {
+      position: fixed;
+      left: 0;
+      top: 0;
+      width: 250px;
+      height: 100vh;
+      background: rgba(0, 0, 0, 0.8);
+      border-right: 2px solid #00ffe0;
+      padding: 20px;
+      overflow-y: auto;
+      z-index: 100;
+      transition: transform 0.3s ease;
+      transform: translateX(-250px);
+    }
+    #sidebar.open {
+      transform: translateX(0);
+    }
+    #toggle-sidebar-btn {
+      position: fixed;
+      left: 10px;
+      top: 10px;
+      padding: 0.5rem 1rem;
+      background: #00ffe0;
+      color: black;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      z-index: 101;
+      box-shadow: 0 0 8px rgba(0,255,238,0.8);
+    }
+    #sidebar h2 {
+      color: #00ffe0;
+      margin-bottom: 10px;
+      text-shadow: 0 0 5px #00ffe0;
+    }
+    #rules-content ul {
+      font-size: 0.85em;
+      list-style: disc;
+      margin-left: 20px;
+    }
+
+    #main-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding-top: 60px;
+    }
+
+    h1 {
+      color: #00ffe0;
+      font-size: 2em;
+      text-shadow: 0 0 10px #00ffe0;
+      margin-bottom: 10px;
+      text-align: center;
+    }
+
+    #game-board {
+      display: grid;
+      grid-template-columns: repeat(10, 40px);
+      grid-template-rows: repeat(10, 40px);
+      gap: 1px;
+      border: 2px solid #00ffe0;
+      border-radius: 10px;
+      box-shadow: 0 0 20px 8px rgba(0,255,238,0.7);
+      background: rgba(0, 0, 0, 0.5);
+      margin: 20px auto;
+    }
+
+    .cell {
+      width: 40px;
+      height: 40px;
+      background-color: rgba(255, 255, 255, 0.05);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+
+    .unit {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: bold;
+      color: black;
+    }
+    .player { background-color: #00ffee; box-shadow: 0 0 5px #00ffee; }
+    .ai { background-color: #ff4444; box-shadow: 0 0 5px #ff4444; }
+
+    @media (max-width: 600px) {
+      #main-container {
+        padding-top: 80px;
+        padding-left: 10px;
+        padding-right: 10px;
+      }
+      h1 {
+        font-size: 1.4em;
+      }
+      #game-board {
+        width: 95vw;
+        height: 95vw;
+        max-width: 380px;
+        max-height: 380px;
+        grid-template-columns: repeat(10, 1fr);
+        grid-template-rows: repeat(10, 1fr);
+      }
+      .cell {
+        width: 100%;
+        height: 100%;
+      }
+      .unit {
+        width: 85%;
+        height: 85%;
+        max-width: 90%;
+        max-height: 90%;
+        font-size: 0.8rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <button id="toggle-sidebar-btn">Rules</button>
+  <div id="sidebar">
+    <h2>Game Rules</h2>
+    <div id="rules-content">
+      <ul>
+        <li>Each team has 3 units: Soldier, Sniper, and Tank.</li>
+        <li>Soldier: Balanced. Sniper: Long range. Tank: High HP.</li>
+        <li>Click a unit, then click a valid cell to move or attack.</li>
+        <li>Eliminate all enemy units to win the match.</li>
+      </ul>
+    </div>
+  </div>
+  <div id="main-container">
+    <h1>ENA Grid Tactics</h1>
+    <div id="game-board"></div>
+  </div>
+  <script>
+    const sidebar = document.getElementById('sidebar');
+    const toggleBtn = document.getElementById('toggle-sidebar-btn');
+    toggleBtn.onclick = () => {
+      sidebar.classList.toggle('open');
+      toggleBtn.textContent = sidebar.classList.contains('open') ? 'Close' : 'Rules';
+    };
+
+    const board = document.getElementById('game-board');
+    const gridSize = 10;
+    const cells = [];
+
+    const units = [
+      { id: 'S1', team: 'player', x: 1, y: 9, type: 'Soldier', hp: 3 },
+      { id: 'N1', team: 'player', x: 3, y: 9, type: 'Sniper', hp: 2 },
+      { id: 'T1', team: 'player', x: 5, y: 9, type: 'Tank', hp: 5 },
+      { id: 'S2', team: 'ai', x: 1, y: 0, type: 'Soldier', hp: 3 },
+      { id: 'N2', team: 'ai', x: 3, y: 0, type: 'Sniper', hp: 2 },
+      { id: 'T2', team: 'ai', x: 5, y: 0, type: 'Tank', hp: 5 }
+    ];
+
+    function createGrid() {
+      for (let y = 0; y < gridSize; y++) {
+        for (let x = 0; x < gridSize; x++) {
+          const cell = document.createElement('div');
+          cell.className = 'cell';
+          cell.dataset.x = x;
+          cell.dataset.y = y;
+          cells.push(cell);
+          board.appendChild(cell);
+        }
+      }
+    }
+
+    function drawUnits() {
+      cells.forEach(c => c.innerHTML = '');
+      units.forEach(unit => {
+        const cell = cells.find(c => +c.dataset.x === unit.x && +c.dataset.y === unit.y);
+        if (!cell) return;
+        const div = document.createElement('div');
+        div.className = `unit ${unit.team}`;
+        div.textContent = unit.type[0];
+        cell.appendChild(div);
+      });
+    }
+
+    createGrid();
+    drawUnits();
+  </script>
+</body>
+</html>
